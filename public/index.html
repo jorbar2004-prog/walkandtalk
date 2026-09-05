@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <title>WiFi Walkie-Talkie</title>
+</head>
+<body>
+<main class="app">
+  <h1>📡 WiFi Walkie-Talkie</h1>
+  <p id="status" class="status">Desconectado</p>
+
+  <section class="card">
+    <label>Tu nombre</label>
+    <input id="name" maxlength="24" placeholder="Ej. Juan" autocomplete="off">
+
+    <label>Canal / sala</label>
+    <input id="room" maxlength="32" value="general" autocomplete="off">
+
+    <button id="connect">Conectar</button>
+  </section>
+
+  <section class="card talk-card">
+    <div id="peer">Sin conexión</div>
+    <button id="talk" class="talk" disabled>🎙️<span>MANTENER PARA HABLAR</span></button>
+    <p id="hint">Conectá primero.</p>
+    <button id="unlockAudio" class="unlock" hidden>🔊 Tocá para activar el audio</button>
+  </section>
+
+  <section class="card">
+    <h2>Cómo probar</h2>
+    <ol>
+      <li>Abrí esta misma página en otro celular o PC (con internet, no hace falta el mismo Wi-Fi).</li>
+      <li>Dale permiso de micrófono cuando lo pida el navegador.</li>
+      <li>Usá el mismo canal en ambos dispositivos, con nombres diferentes, y tocá <b>Conectar</b>.</li>
+      <li>Mantené presionado el botón rojo para hablar.</li>
+    </ol>
+    <p class="small">Funciona entre dos dispositivos en cualquier red con internet. En redes muy restrictivas (firewalls corporativos, algunas 4G con NAT simétrico) la conexión de audio directa puede fallar.</p>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
