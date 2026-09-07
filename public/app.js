@@ -4,6 +4,8 @@ const statusEl = $('status'), connectBtn = $('connect'), talkBtn = $('talk'),
 
 let ws = null, pc = null, localStream = null, remoteAudio = null;
 let room = '', name = '', connected = false, wakeLock = null;
+let manualDisconnect = false; // true solo si el usuario tocó "Desconectar" a propósito
+let reconnectTimer = null;
 
 function setStatus(text, ok = false) {
   statusEl.textContent = text;
@@ -25,13 +27,29 @@ async function requestWakeLock() {
 function releaseWakeLock() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && connected) requestWakeLock();
-});
+
+// --- Recordar nombre/canal para no tener que escribirlos ni tocar "Conectar" cada vez ---
+function saveConfig(n, r) {
+  try {
+    localStorage.setItem('walkie_name', n);
+    localStorage.setItem('walkie_room', r);
+  } catch (e) {}
+}
+function loadConfig() {
+  try {
+    return {
+      name: localStorage.getItem('walkie_name') || '',
+      room: localStorage.getItem('walkie_room') || '',
+    };
+  } catch (e) {
+    return { name: '', room: '' };
+  }
+}
 
 async function start() {
   name = $('name').value.trim() || 'Usuario';
   room = $('room').value.trim() || 'general';
+  saveConfig(name, room);
 
   localStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -49,6 +67,7 @@ async function start() {
     ws.send(JSON.stringify({ type: 'join', room, name }));
     setStatus('Conectado al servidor', true);
     connected = true;
+    manualDisconnect = false;
     connectBtn.textContent = 'Desconectar';
     connectBtn.disabled = false;
     requestWakeLock();
@@ -58,7 +77,7 @@ async function start() {
     const m = JSON.parse(e.data);
     if (m.type === 'waiting') {
       peerEl.textContent = '🟡 Esperando a alguien más en este canal…';
-      hintEl.textContent = 'Abrí la misma app y el mismo canal en otro celular.';
+      hintEl.textContent = 'Dejá la app abierta: apenas el otro se conecte, van a quedar emparejados solos.';
     }
     if (m.type === 'peer') {
       peerEl.textContent = '🟢 ' + m.name;
@@ -76,15 +95,53 @@ async function start() {
     }
     if (m.type === 'error') {
       setStatus(m.message);
+      manualDisconnect = true; // canal lleno: no tiene sentido reintentar solo
       stop();
     }
   };
   ws.onclose = () => {
-    if (connected) setStatus('Servidor desconectado');
     connected = false;
+    talkBtn.disabled = true;
+    if (manualDisconnect) {
+      setStatus('Desconectado');
+    } else {
+      // Corte inesperado (red, el celular se durmió, etc.): reintentamos solos.
+      setStatus('Se cortó — reconectando…');
+      scheduleReconnect();
+    }
   };
   ws.onerror = () => setStatus('Error de conexión');
 }
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (!manualDisconnect) tryAutoStart();
+  }, 3000);
+}
+
+async function tryAutoStart() {
+  if (connected) return;
+  connectBtn.disabled = true;
+  try {
+    await start();
+  } catch (e) {
+    // Sin permiso de mic todavía u otro error: no insistimos solos, hace falta
+    // que la persona toque "Conectar" una vez para autorizar el micrófono.
+    setStatus('Tocá "Conectar" para habilitar el micrófono');
+    connectBtn.disabled = false;
+  }
+}
+
+// Si la pestaña estuvo en segundo plano y el navegador cortó la conexión,
+// al volver a primer plano probamos reconectar enseguida (no esperamos los 3s).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (connected) requestWakeLock();
+    else if (!manualDisconnect && ($('name').value || loadConfig().name)) tryAutoStart();
+  }
+});
 
 async function createPeer(initiator) {
   closePeer();
@@ -145,8 +202,9 @@ function closePeer() {
 
 function stop() {
   connected = false;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   closePeer();
-  if (ws) { ws.close(); ws = null; }
+  if (ws) { ws.onclose = null; ws.close(); ws = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   releaseWakeLock();
   connectBtn.textContent = 'Conectar';
@@ -156,11 +214,16 @@ function stop() {
   peerEl.textContent = 'Sin conexión';
   hintEl.textContent = 'Conectá primero.';
   unlockBtn.hidden = true;
-  setStatus('Desconectado');
 }
 
 connectBtn.onclick = async () => {
-  if (connected) { stop(); return; }
+  if (connected) {
+    manualDisconnect = true;
+    stop();
+    setStatus('Desconectado');
+    return;
+  }
+  manualDisconnect = false;
   connectBtn.disabled = true;
   try {
     await start();
@@ -188,3 +251,21 @@ talkBtn.addEventListener('contextmenu', e => e.preventDefault()); // evita el me
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
+
+// --- Al abrir la app: precargar nombre/canal guardados y, si ya existen, ---
+// --- conectar solo, sin esperar que toquen "Conectar".                   ---
+(function initAutoConnect() {
+  const saved = loadConfig();
+  const params = new URLSearchParams(location.search);
+  const roomFromLink = params.get('room'); // permite compartir un link tipo ?room=familia
+
+  if (saved.name) $('name').value = saved.name;
+  $('room').value = roomFromLink || saved.room || 'general';
+
+  if (saved.name) {
+    // Ya usó la app antes en este navegador: se conecta directo.
+    tryAutoStart();
+  } else {
+    setStatus('Escribí tu nombre y tocá "Conectar" (solo la primera vez)');
+  }
+})();
