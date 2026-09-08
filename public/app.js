@@ -46,6 +46,48 @@ function loadConfig() {
   }
 }
 
+// --- Notificaciones push ("llamada de conexión") ---
+// Reemplazá esta clave por la tuya (la pública que generes junto con la
+// privada). Tiene que ser la misma que pusiste en wrangler.toml.
+const VAPID_PUBLIC_KEY = 'BIfXb7KdkiKqRQ_ix--1IVfDQgAzBN8OYUlRa6jTsGyN2Fray3Vp_Bc6gEDEl4KymtG0kBQ8BhB46FWR4EgEF64';
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function subscribeToPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+  if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.startsWith('PONÉ')) return; // falta configurar la clave
+
+  try {
+    if (Notification.permission === 'default') {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return;
+    }
+    if (Notification.permission !== 'granted') return;
+
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    await fetch('/subscribe?room=' + encodeURIComponent(room), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, subscription: sub.toJSON() }),
+    });
+  } catch (e) {
+    // Si falla (permiso denegado, navegador sin soporte, etc.) seguimos
+    // funcionando igual sin notificaciones — no es un error bloqueante.
+  }
+}
+
 async function start() {
   name = $('name').value.trim() || 'Usuario';
   room = $('room').value.trim() || 'general';
@@ -71,10 +113,15 @@ async function start() {
     connectBtn.textContent = 'Desconectar';
     connectBtn.disabled = false;
     requestWakeLock();
+    subscribeToPush();
   };
 
   ws.onmessage = async e => {
     const m = JSON.parse(e.data);
+    if (m.type === 'ping') {
+      ws.send(JSON.stringify({ type: 'pong' })); // le contesta el "latido" al servidor
+      return;
+    }
     if (m.type === 'waiting') {
       peerEl.textContent = '🟡 Esperando a alguien más en este canal…';
       hintEl.textContent = 'Dejá la app abierta: apenas el otro se conecte, van a quedar emparejados solos.';
@@ -249,7 +296,9 @@ talkBtn.addEventListener('pointerdown', e => { e.preventDefault(); speaking(true
 talkBtn.addEventListener('contextmenu', e => e.preventDefault()); // evita el menú de "mantener presionado" en Android
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // Se registra apenas carga el script (no hace falta esperar a "load"),
+  // así queda listo lo antes posible para poder recibir pushes.
+  navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
 // --- Al abrir la app: precargar nombre/canal guardados y, si ya existen, ---
