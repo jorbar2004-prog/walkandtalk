@@ -13,3 +13,13 @@ class_name = "Room"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+# Claves para las notificaciones push ("llamada de conexión").
+# VAPID_PUBLIC_KEY no es secreta (viaja también al cliente en app.js).
+# VAPID_PRIVATE_KEY NO va acá: se carga como "Secret" desde el dashboard
+# de Cloudflare (Settings → Variables and Secrets), para que no quede
+# expuesta en el repo de GitHub.
+[vars]
+VAPID_PUBLIC_KEY = "BIfXb7KdkiKqRQ_ix--1IVfDQgAzBN8OYUlRa6jTsGyN2Fray3Vp_Bc6gEDEl4KymtG0kBQ8BhB46FWR4EgEF64"
+VAPID_SUBJECT = "mailto:PONÉ_TU_EMAIL_REAL_ACÁ"
+
