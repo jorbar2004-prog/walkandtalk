@@ -22,3 +22,34 @@ self.addEventListener('fetch', e => {
     caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => cached))
   );
 });
+
+// --- "Llamada de conexión": muestra la notificación aunque la app esté cerrada ---
+self.addEventListener('push', event => {
+  let data = { title: '📡 Llamada de conexión', body: 'Alguien quiere hablar' };
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    // si no viene como JSON válido, usamos el texto de reserva de arriba
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      vibrate: [200, 100, 200],
+      tag: 'walkie-llamada',
+      renotify: true,
+    })
+  );
+});
+
+// Al tocar la notificación, abre la app (o la trae al frente si ya está abierta).
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) if ('focus' in c) return c.focus();
+      if (self.clients.openWindow) return self.clients.openWindow('/');
+    })
+  );
+});
